@@ -1,48 +1,68 @@
-build_android:
-  name: Build Android
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
+name: Build Android Project
 
-    - name: Setup JDK 11
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '11'
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
 
-    - name: Set ANDROID_SDK_ROOT
-      run: echo "ANDROID_SDK_ROOT=$RUNNER_TEMP/android-sdk" >> $GITHUB_ENV
+jobs:
+  build_android:
+    name: Build Android
+    runs-on: ubuntu-latest
 
-    - name: Install Android SDK + NDK
-      run: |
-        mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
-        cd "$ANDROID_SDK_ROOT"
-        wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip
-        unzip cmdline-tools.zip -d cmdline-tools
-        export PATH=$ANDROID_SDK_ROOT/cmdline-tools/bin:$PATH
-        yes | sdkmanager --sdk_root="$ANDROID_SDK_ROOT" --licenses
-        sdkmanager --sdk_root="$ANDROID_SDK_ROOT" "platform-tools" "platforms;android-29" "ndk;23.1.7779620"
-        echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/23.1.7779620" >> $GITHUB_ENV
+    steps:
+      # 1. Fazer checkout do código
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-    - name: Install Qt (Android)
-      uses: jurplel/install-qt-action@v4
-      with:
-        version: '5.12.9'
-        target: 'android'
-        arch: 'android_arm64,android_armv7'
+      # 2. Instalar JDK 11
+      - name: Setup JDK 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
 
-    - name: Build qmake (Android)
-      run: |
-        mkdir -p build-android && cd build-android
-        /opt/Qt/*/android/bin/qmake ../vulkanCapsViewer.pro -spec android-clang CONFIG+=release
-        make -j$(nproc)
-        make apk
-        ls -R android-build/outputs/
+      # 3. Definir ANDROID_SDK_ROOT
+      - name: Set ANDROID_SDK_ROOT
+        run: echo "ANDROID_SDK_ROOT=$RUNNER_TEMP/android-sdk" >> $GITHUB_ENV
 
-    - name: Upload
-      if: github.ref == 'refs/heads/master'
-      run: |
-        APK_FILE=$(find build-android/android-build/outputs/apk/release -name "*.apk" | head -n 1)
-        curl -T "$APK_FILE" ftp://${{ secrets.FTP_USER_NAME }}:${{ secrets.FTP_PASS }}@${{ secrets.FTP_SERVER_NAME }}
+      # 4. Instalar Android SDK e NDK
+      - name: Install Android SDK + NDK
+        run: |
+          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
+          cd "$ANDROID_SDK_ROOT"
+          wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip
+          unzip cmdline-tools.zip -d cmdline-tools
+          export PATH=$ANDROID_SDK_ROOT/cmdline-tools/bin:$PATH
+          yes | sdkmanager --sdk_root="$ANDROID_SDK_ROOT" --licenses
+          sdkmanager --sdk_root="$ANDROID_SDK_ROOT" "platform-tools" "platforms;android-29" "ndk;23.1.7779620"
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/23.1.7779620" >> $GITHUB_ENV
+
+      # 5. Instalar Qt para Android
+      - name: Install Qt (Android)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '5.12.9'
+          target: 'android'
+          arch: 'android_arm64,android_armv7'
+
+      # 6. Build do projeto
+      - name: Build qmake (Android)
+        run: |
+          mkdir -p build-android && cd build-android
+          /opt/Qt/*/android/bin/qmake ../vulkanCapsViewer.pro -spec android-clang CONFIG+=release
+          make -j$(nproc)
+          make apk
+          ls -R android-build/outputs/
+
+      # 7. Upload do APK via FTP
+      - name: Upload APK
+        if: github.ref == 'refs/heads/master'
+        run: |
+          APK_FILE=$(find build-android/android-build/outputs/apk/release -name "*.apk" | head -n 1)
+          curl -T "$APK_FILE" ftp://${{ secrets.FTP_USER_NAME }}:${{ secrets.FTP_PASS }}@${{ secrets.FTP_SERVER_NAME }}
